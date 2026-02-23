@@ -1,0 +1,27 @@
+{
+  "providers": {
+    "myclaw": {
+      "baseUrl": "https://cxzfdbvutcaszjrxmklh.supabase.co/functions/v1/v1",
+      "apiKey": "b9cab587-9297-4e93-acbf-1dd83b8ab3da",
+      "api": "anthropic-messages",
+      "models": [
+        {
+          "id": "auto",
+          "name": "Auto Switch",
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        }
+      ]
+    }
+  }
+}
