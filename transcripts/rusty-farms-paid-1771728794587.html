@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>#rusty-farms-paid — Rusty farms's server</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #313338;
+      color: #dbdee1;
+      font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.375;
+    }
+
+    .header-bar {
+      background: #2b2d31;
+      border-bottom: 1px solid #1e1f22;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-bar img.guild-icon {
+      width: 40px; height: 40px; border-radius: 50%;
+    }
+
+    .header-bar .info h1 {
+      font-size: 16px; font-weight: 600; color: #f2f3f5;
+    }
+
+    .header-bar .info .meta {
+      font-size: 12px; color: #949ba4;
+    }
+
+    .messages {
+      padding: 16px 0;
+      max-width: 100%;
+    }
+
+    .message {
+      display: flex;
+      padding: 2px 48px 2px 72px;
+      position: relative;
+      min-height: 44px;
+    }
+
+    .message:hover { background: #2e3035; }
+
+    .message .avatar {
+      position: absolute;
+      left: 16px;
+      width: 40px; height: 40px;
+    }
+
+    .message .avatar img {
+      width: 40px; height: 40px; border-radius: 50%;
+    }
+
+    .message .content { flex: 1; min-width: 0; }
+
+    .message .header {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+
+    .message .name {
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .message .name:hover { text-decoration: underline; }
+
+    .bot-tag {
+      background: #5865f2;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 4px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    .message .time {
+      color: #949ba4;
+      font-size: 12px;
+    }
+
+    .message .text {
+      color: #dbdee1;
+      word-wrap: break-word;
+    }
+
+    .message .text code {
+      background: #2b2d31;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13.6px;
+    }
+
+    .mention {
+      background: rgba(88, 101, 242, 0.3);
+      color: #c9cdfb;
+      padding: 0 2px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .attachment { margin-top: 8px; }
+
+    .attachment img {
+      max-width: 400px;
+      max-height: 300px;
+      border-radius: 8px;
+    }
+
+    .attachment a {
+      color: #00a8fc;
+      text-decoration: none;
+    }
+
+    .embed {
+      margin-top: 8px;
+      background: #2b2d31;
+      border-left: 4px solid #5865f2;
+      border-radius: 4px;
+      padding: 12px;
+      max-width: 520px;
+    }
+
+    .embed-title {
+      font-weight: 700;
+      color: #f2f3f5;
+      margin-bottom: 4px;
+    }
+
+    .embed-desc {
+      color: #dbdee1;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .embed-fields {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .embed-field { flex: 0 0 100%; }
+    .embed-field.inline { flex: 0 0 calc(33.3% - 8px); }
+
+    .field-name {
+      font-weight: 700;
+      color: #f2f3f5;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .field-value {
+      color: #dbdee1;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    .embed-image img, .embed-thumb img {
+      max-width: 400px;
+      max-height: 300px;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+
+    .footer-bar {
+      background: #2b2d31;
+      border-top: 1px solid #1e1f22;
+      padding: 16px 24px;
+      text-align: center;
+      color: #949ba4;
+      font-size: 13px;
+    }
+
+    @media (max-width: 600px) {
+      .message { padding: 2px 12px 2px 56px; }
+      .message .avatar { left: 8px; }
+      .embed { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-bar">
+    
+    <div class="info">
+      <h1># rusty-farms-paid</h1>
+      <div class="meta">Rusty farms's server • 8 messages • Created 2/22/2026, 2:47:50 AM</div>
+    </div>
+  </div>
+  <div class="messages">
+    
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:47 AM</span>
+          </div>
+          <div class="text"><span class="mention">@user</span> &lt;@&amp;1474939673305419876&gt;</div>
+          
+          <div class="embed" style="border-left-color: #5865f2"><div class="embed-title">💰 Purchase — Ticket #13</div><div class="embed-desc">Welcome Please wait for a &lt;@&amp;1474939673305419876&gt; member to proccess your order.</div><div class="embed-fields"><div class="embed-field inline"><div class="field-name">👤 Opened by</div><div class="field-value">&lt;@178653326873853953&gt;</div></div><div class="embed-field inline"><div class="field-name">📁 Category</div><div class="field-value">Purchase</div></div><div class="embed-field inline"><div class="field-name">🔢 Ticket ID</div><div class="field-value">#13</div></div></div></div>
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:47 AM</span>
+          </div>
+          
+          
+          <div class="embed" style="border-left-color: #00ff00"><div class="embed-title">✅ Order Confirmed!</div><div class="embed-desc">&lt;@178653326873853953&gt; has confirmed their order:
+
+• **ALO Grey Full ZIP set** (5) x5 — $225.00
+
+**Total: $225.00**</div></div>
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:47 AM</span>
+          </div>
+          <div class="text">&lt;@&amp;1474939673305419876&gt; 📋 <strong>Order confirmed!</strong> Total: <strong>$225.00</strong><br>Run <code>/start</code> to begin the payment process.</div>
+          
+          
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:48 AM</span>
+          </div>
+          
+          
+          <div class="embed" style="border-left-color: #ffa500"><div class="embed-title">💰 💳 zelle — Payment Instructions</div><div class="embed-desc">&lt;@178653326873853953&gt;, send your payment and upload a screenshot below.
+
+**Your Order:**
+• **ALO Grey Full ZIP set** (5) x5 — $225.00
+
+**Total: $225.00**
+
+───────────────
+
+Send money to zelle 743-232-1234 write &quot;gift&quot; in the memo
+
+───────────────
+📸 **Upload a screenshot of your payment below ⬇️**</div></div>
+        </div>
+      </div>
+
+      <div class="message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/avatars/178653326873853953/6c3e67efb74acdf98dbe5c47e010d10b.png?size=64" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Rusty farms</span>
+            
+            <span class="time">02/22/2026, 02:48 AM</span>
+          </div>
+          
+          <div class="attachment"><img src="https://cdn.discordapp.com/attachments/1474960851214799130/1474960940788088925/Screenshot_1.png?ex=699bbfeb&amp;is=699a6e6b&amp;hm=fa309b390cd5bbca6e721ad49e6e78bd842a88ced4f481d11fa453cd8558d8cf&amp;" alt="attachment" /></div>
+          
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:48 AM</span>
+          </div>
+          
+          
+          <div class="embed" style="border-left-color: #00ff00"><div class="embed-title">✅ Payment Approved!</div><div class="embed-desc">&lt;@178653326873853953&gt;, your payment has been approved!
+
+Click the button below to enter your shipping info:</div></div>
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:53 AM</span>
+          </div>
+          
+          
+          <div class="embed" style="border-left-color: #00ff00"><div class="embed-title">📋 Order Summary — Ready to Ship!</div><div class="embed-desc">**Order Items:**
+• **ALO Grey Full ZIP set** (5) x5 — $225.00
+
+**Total: $225.00**</div><div class="embed-fields"><div class="embed-field inline"><div class="field-name">👤 Buyer</div><div class="field-value">&lt;@178653326873853953&gt;</div></div><div class="embed-field inline"><div class="field-name">📛 Name</div><div class="field-value">324234</div></div><div class="embed-field"><div class="field-name">📍 Shipping Address</div><div class="field-value">234234
+23423423
+4234,  23423432</div></div><div class="embed-field"><div class="field-name">📋 Copy for CSV (one field per line)</div><div class="field-value">```
+324234
+234234
+23423423
+4234
+
+23423432
+```</div></div></div></div>
+        </div>
+      </div>
+
+      <div class="message bot-message">
+        <div class="avatar"><img src="https://cdn.discordapp.com/embed/avatars/0.png" alt="" /></div>
+        <div class="content">
+          <div class="header">
+            <span class="name" style="color: #ffffff">Inventory bot</span>
+            <span class="bot-tag">BOT</span>
+            <span class="time">02/22/2026, 02:53 AM</span>
+          </div>
+          <div class="text">📝 Saving transcript and closing...</div>
+          
+          
+        </div>
+      </div>
+  </div>
+  <div class="footer-bar">
+    Transcript generated 2/22/2026, 2:53:14 AM • 8 messages
+  </div>
+</body>
+</html>

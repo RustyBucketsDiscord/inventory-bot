@@ -1,0 +1,26 @@
+{
+  "name": "inventory-bot",
+  "version": "1.0.0",
+  "description": "Discord inventory & order management bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js",
+    "deploy:guild": "node deploy-commands.js --guild",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "inventory",
+    "orders"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "discord.js": "^14.0.0",
+    "dotenv": "^16.0.0",
+    "express": "^5.2.1"
+  }
+}
