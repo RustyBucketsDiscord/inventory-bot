@@ -7,7 +7,8 @@
     "start": "node index.js",
     "deploy": "node deploy-commands.js",
     "deploy:guild": "node deploy-commands.js --guild",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "postinstall": "npm rebuild better-sqlite3 --build-from-source"
   },
   "keywords": [
     "discord",
