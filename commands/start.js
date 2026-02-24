@@ -3,11 +3,9 @@ const { orders, products, paymentMethods, db } = require('../utils/database');
 const { formatPrice, parseEmoji } = require('../utils/helpers');
 
 module.exports = {
-  data: [
-    new SlashCommandBuilder()
-      .setName('start')
-      .setDescription('Start the payment flow for this ticket (staff only)'),
-  ],
+  data: new SlashCommandBuilder()
+    .setName('start')
+    .setDescription('Start the payment flow for this ticket (staff only)'),
 
   async execute(interaction) {
     const { cart } = require('../utils/cart');
