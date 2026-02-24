@@ -197,10 +197,10 @@ module.exports = {
         await interaction.channel.setName(`${safeName}-tracking`);
       } catch (e) {}
 
-      // Auto-delete in 5 minutes
+      // Auto-delete in 3 minutes (user requested)
       setTimeout(async () => {
         try { await interaction.channel.delete('Order completed — tracking sent'); } catch (e) {}
-      }, 5 * 60 * 1000);
+      }, 3 * 60 * 1000);
     }
 
     // ─── List ───────────────────────────────────────────────────────────

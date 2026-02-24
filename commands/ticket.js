@@ -146,6 +146,11 @@ module.exports = {
         .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID to list buttons for').setRequired(true))
     )
     .addSubcommand(sub =>
+      sub.setName('button-modal')
+        .setDescription('Manage buttons via popup form (add/edit/remove)')
+        .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID to manage buttons for').setRequired(true))
+    )
+    .addSubcommand(sub =>
       sub.setName('category')
         .setDescription('Add a ticket category (auto-creates a Discord folder for it)')
         .addStringOption(opt => opt.setName('name').setDescription('Category name').setRequired(true))
@@ -542,16 +547,60 @@ module.exports = {
 
       const reason = interaction.options.getString('reason') || 'No reason provided';
 
-      // Confirm close
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`ticket_close_confirm:${ticket.id}`).setLabel('✅ Close Ticket').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('ticket_close_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
-      );
+      // Staff can close immediately, ticket owners need confirmation
+      if (isStaff) {
+        // Staff instant close
+        await interaction.deferReply({ ephemeral: true });
+        
+        // Call the close function directly
+        const { db } = require('../utils/database');
+        const ticketSettings = db.prepare('SELECT * FROM ticket_settings WHERE guild_id = ?').get(interaction.guildId);
+        
+        // Close the ticket (similar to ticket_close_confirm logic)
+        db.prepare('UPDATE tickets SET status = ?, closed_at = datetime("now") WHERE id = ?').run('closed', ticket.id);
+        
+        // Log to transcript channel if available
+        if (ticketSettings && ticketSettings.transcript_channel_id) {
+          try {
+            const transcriptChannel = await interaction.client.channels.fetch(ticketSettings.transcript_channel_id);
+            const transcriptEmbed = new EmbedBuilder()
+              .setTitle(`🎫 Ticket #${ticket.id} — Closed`)
+              .setDescription(`**Reason:** ${reason}\n**Closed by:** ${interaction.user.tag} (Staff)`)
+              .addFields(
+                { name: 'User', value: `<@${ticket.user_id}>`, inline: true },
+                { name: 'Channel', value: `<#${ticket.channel_id}>`, inline: true },
+                { name: 'Opened', value: `<t:${Math.floor(new Date(ticket.created_at).getTime() / 1000)}:R>`, inline: true },
+              )
+              .setColor(0xff0000)
+              .setTimestamp();
+            
+            await transcriptChannel.send({ embeds: [transcriptEmbed] });
+          } catch (e) {}
+        }
+        
+        // Delete the channel
+        try {
+          const channel = await interaction.client.channels.fetch(ticket.channel_id);
+          await channel.delete(`Ticket closed by staff: ${interaction.user.tag}`);
+        } catch (e) {
+          await interaction.editReply({ content: `✅ Ticket #${ticket.id} closed (but could not delete channel).` });
+          return;
+        }
+        
+        await interaction.editReply({ content: `✅ Ticket #${ticket.id} closed instantly by staff.` });
+        return;
+      } else {
+        // Ticket owner needs confirmation
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ticket_close_confirm:${ticket.id}`).setLabel('✅ Close Ticket').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('ticket_close_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+        );
 
-      await interaction.reply({
-        content: `⚠️ Are you sure you want to close this ticket?\n📝 Reason: ${reason}`,
-        components: [row],
-      });
+        await interaction.reply({
+          content: `⚠️ Are you sure you want to close this ticket?\n📝 Reason: ${reason}`,
+          components: [row],
+        });
+      }
     }
 
     // ─── Claim ──────────────────────────────────────────────────────────
@@ -1130,6 +1179,88 @@ module.exports = {
         .setFooter({ text: `Panel: ${panel.title} in #${panel.channel_id}` });
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    // ─── Button Modal (popup form for adding/editing buttons) ──────────────
+    if (sub === 'button-modal') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
+      }
+
+      const panelId = interaction.options.getInteger('panel-id');
+
+      // Check if panel exists
+      const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ? AND guild_id = ?').get(panelId, interaction.guildId);
+      if (!panel) {
+        return interaction.reply({ content: `❌ Panel ID ${panelId} not found. Use /ticket panel-list to see available panels.`, ephemeral: true });
+      }
+
+      // Get available categories
+      const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY name').all(interaction.guildId);
+      if (categories.length === 0) {
+        return interaction.reply({ 
+          content: '❌ No ticket categories found. Add some first with `/ticket category`.', 
+          ephemeral: true 
+        });
+      }
+
+      // Create modal for adding a button
+      const modal = new ModalBuilder()
+        .setCustomId(`button_add_modal:${panelId}`)
+        .setTitle(`✏️ Add Button to Panel #${panelId}`);
+
+      // Category selection as text input (list categories in placeholder)
+      const categoryOptions = categories.map(c => `${c.emoji} ${c.name}`).join(', ');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('category_name')
+            .setLabel('Category Name')
+            .setPlaceholder(`e.g. Purchase, Support, etc. Available: ${categoryOptions.slice(0, 100)}...`)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(100)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('custom_label')
+            .setLabel('Custom Button Label (optional)')
+            .setPlaceholder('Leave empty to use category name')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setMaxLength(80)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('custom_emoji')
+            .setLabel('Custom Emoji (optional)')
+            .setPlaceholder('e.g. 🛒, ❓, 🔥')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setMaxLength(10)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('button_style')
+            .setLabel('Button Style (Primary/Secondary/Success/Danger/Link)')
+            .setPlaceholder('Primary')
+            .setValue('Primary')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setMaxLength(20)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('button_order')
+            .setLabel('Button Order (number, optional)')
+            .setPlaceholder('1, 2, 3... Leave empty for auto')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setMaxLength(3)
+        ),
+      );
+
+      await interaction.showModal(modal);
     }
   },
 };

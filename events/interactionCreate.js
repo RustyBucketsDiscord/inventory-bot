@@ -1531,6 +1531,66 @@ module.exports = {
         });
       }
 
+      // --- Button add modal submitted ---
+      if (action === 'button_add_modal') {
+        const panelId = parseInt(args[0]);
+
+        const categoryName = interaction.fields.getTextInputValue('category_name')?.trim();
+        const customLabel = interaction.fields.getTextInputValue('custom_label')?.trim() || '';
+        const customEmoji = interaction.fields.getTextInputValue('custom_emoji')?.trim() || '';
+        const buttonStyle = interaction.fields.getTextInputValue('button_style')?.trim() || 'Primary';
+        const buttonOrderStr = interaction.fields.getTextInputValue('button_order')?.trim();
+
+        // Validate button style
+        const validStyles = ['Primary', 'Secondary', 'Success', 'Danger', 'Link'];
+        const finalStyle = validStyles.includes(buttonStyle) ? buttonStyle : 'Primary';
+
+        // Parse button order
+        let buttonOrder = 0;
+        if (buttonOrderStr && !isNaN(parseInt(buttonOrderStr))) {
+          buttonOrder = parseInt(buttonOrderStr);
+        } else {
+          // Get max order + 1
+          const maxOrder = db.prepare('SELECT MAX(button_order) as max FROM ticket_panel_buttons WHERE panel_id = ?').get(panelId).max || 0;
+          buttonOrder = maxOrder + 1;
+        }
+
+        // Find category
+        const category = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? AND LOWER(name) = LOWER(?)').get(interaction.guildId, categoryName);
+        if (!category) {
+          return interaction.reply({ 
+            content: `❌ Category "${categoryName}" not found. Available categories: ${db.prepare('SELECT name FROM ticket_categories WHERE guild_id = ?').all(interaction.guildId).map(c => c.name).join(', ')}`, 
+            ephemeral: true 
+          });
+        }
+
+        // Check if button already exists
+        const existing = db.prepare('SELECT * FROM ticket_panel_buttons WHERE panel_id = ? AND category_id = ?').get(panelId, category.id);
+        if (existing) {
+          return interaction.reply({ 
+            content: `❌ A button for "${categoryName}" already exists on panel ${panelId}. Use /ticket button-edit instead.`, 
+            ephemeral: true 
+          });
+        }
+
+        // Add button to database
+        db.prepare(`
+          INSERT INTO ticket_panel_buttons (panel_id, category_id, custom_label, custom_emoji, button_style, button_order)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(panelId, category.id, customLabel, customEmoji, finalStyle, buttonOrder);
+
+        // Update panel to show it's no longer blank
+        const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ?').get(panelId);
+        if (panel && panel.blank) {
+          db.prepare('UPDATE ticket_panels SET blank = 0 WHERE id = ?').run(panelId);
+        }
+
+        await interaction.reply({ 
+          content: `✅ Button added to panel ${panelId}!\n\n**Category:** ${category.emoji} ${category.name}\n**Label:** ${customLabel || category.name}\n**Emoji:** ${customEmoji || category.emoji || 'None'}\n**Style:** ${finalStyle}\n**Order:** ${buttonOrder}\n\nUse /ticket panel-refresh to update the panel.`, 
+          ephemeral: true 
+        });
+      }
+
       // --- Category edit modal submitted ---
       if (action === 'category_edit_modal') {
         const categoryId = parseInt(args[0]);
