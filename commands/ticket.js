@@ -134,8 +134,12 @@ module.exports = {
     )
     .addSubcommand(sub =>
       sub.setName('edit-category')
-        .setDescription('Edit a ticket category — opens a popup form')
+        .setDescription('Edit a ticket category/button — opens a popup form')
         .addStringOption(opt => opt.setName('name').setDescription('Name of category to edit').setRequired(true).setAutocomplete(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('panel-refresh')
+        .setDescription('Refresh/resend the ticket panel with current categories')
     )
     .setDefaultMemberPermissions(null), // Allow everyone to use /ticket close etc, permission checks in code
 
@@ -666,6 +670,67 @@ module.exports = {
       );
 
       await interaction.showModal(modal);
+    }
+
+    // ─── Panel Refresh ──────────────────────────────────────────────────────
+    if (sub === 'panel-refresh') {
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
+      }
+
+      const panel = db.prepare('SELECT * FROM ticket_panels WHERE guild_id = ? ORDER BY id DESC LIMIT 1').get(interaction.guildId);
+      if (!panel) return interaction.reply({ content: '❌ No panel found. Create one with `/ticket panel` first.', ephemeral: true });
+
+      const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+      if (categories.length === 0) return interaction.reply({ content: '❌ No categories found. Add some with `/ticket category`.', ephemeral: true });
+
+      const embed = new EmbedBuilder()
+        .setTitle(panel.title || '🎫 Support Tickets')
+        .setDescription(panel.description || 'Click a button below to open a ticket.')
+        .setColor(parseColor(panel.color) || 0x5865f2)
+        .setTimestamp();
+
+      const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
+      if (catLines.length > 0) embed.addFields({ name: 'Categories', value: catLines.join('\n') });
+
+      let rows = [];
+      if (categories.length <= 5) {
+        const buttons = categories.slice(0, 5).map(c =>
+          new ButtonBuilder()
+            .setCustomId(`ticket_open:${c.id}`)
+            .setLabel(c.name)
+            .setEmoji(parseEmoji(c.emoji))
+            .setStyle(ButtonStyle.Primary)
+        );
+        rows = [new ActionRowBuilder().addComponents(buttons)];
+      } else {
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('ticket_open_select')
+          .setPlaceholder('Select a ticket category')
+          .addOptions(categories.slice(0, 25).map(c => ({
+            label: c.name,
+            description: (c.description || 'Open a ticket').slice(0, 100),
+            emoji: c.emoji,
+            value: String(c.id),
+          })));
+        rows = [new ActionRowBuilder().addComponents(selectMenu)];
+      }
+
+      try {
+        const channel = await interaction.client.channels.fetch(panel.channel_id);
+        if (panel.message_id) {
+          try {
+            const msg = await channel.messages.fetch(panel.message_id);
+            await msg.edit({ embeds: [embed], components: rows });
+            return interaction.reply({ content: '✅ Panel updated!', ephemeral: true });
+          } catch (_) {}
+        }
+        const msg = await channel.send({ embeds: [embed], components: rows });
+        db.prepare('UPDATE ticket_panels SET message_id = ? WHERE id = ?').run(msg.id, panel.id);
+        return interaction.reply({ content: '✅ Panel reposted!', ephemeral: true });
+      } catch (err) {
+        return interaction.reply({ content: `❌ Failed to update panel: ${err.message}`, ephemeral: true });
+      }
     }
   },
 };
