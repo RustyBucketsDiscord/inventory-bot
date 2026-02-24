@@ -1340,7 +1340,28 @@ module.exports = {
           await message.edit({ embeds: [embed], components: rows });
           await interaction.editReply({ content: '✅ Panel updated!' });
         } catch (e) {
-          await interaction.editReply({ content: '❌ Could not update panel. The message may have been deleted.' });
+          // Message was deleted or not found — resend it
+          try {
+            const channel = await interaction.client.channels.fetch(panel.channel_id);
+            const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+            const freshEmbed = new EmbedBuilder()
+              .setTitle(panel.title || '🎫 Support Tickets')
+              .setDescription(panel.description || 'Click a button below to open a ticket.')
+              .setColor(parseColor(panel.color) || 0x5865f2)
+              .setTimestamp();
+            const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
+            if (catLines.length > 0) freshEmbed.addFields({ name: 'Categories', value: catLines.join('\n') });
+            const freshButtons = categories.slice(0, 5).map(c =>
+              new ButtonBuilder().setCustomId(`ticket_open:${c.id}`).setLabel(c.name).setEmoji(parseEmoji(c.emoji)).setStyle(ButtonStyle.Primary)
+            );
+            const freshRows = [];
+            for (let i = 0; i < freshButtons.length; i += 5) freshRows.push(new ActionRowBuilder().addComponents(freshButtons.slice(i, i + 5)));
+            const newMsg = await channel.send({ embeds: [freshEmbed], components: freshRows });
+            db.prepare('UPDATE ticket_panels SET message_id = ? WHERE id = ?').run(newMsg.id, panelId);
+            await interaction.editReply({ content: '✅ Panel reposted (old message was deleted)!' });
+          } catch (e2) {
+            await interaction.editReply({ content: `❌ Could not update panel: ${e2.message}` });
+          }
         }
       }
 
