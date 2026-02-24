@@ -1691,10 +1691,21 @@ async function handleTicketOpen(interaction, categoryId) {
     });
   }
 
+  // Verify category channel exists before using it
+  let parentId = undefined;
+  if (category.category_channel_id) {
+    try {
+      const cat = await interaction.guild.channels.fetch(category.category_channel_id);
+      if (cat) parentId = cat.id;
+    } catch (_) {
+      // Category no longer exists, create ticket without a category folder
+    }
+  }
+
   const ticketChannel = await interaction.guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
-    parent: category.category_channel_id || undefined,
+    parent: parentId,
     permissionOverwrites,
     reason: `Ticket opened by ${interaction.user.tag}`,
   });
