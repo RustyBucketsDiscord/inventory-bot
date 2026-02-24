@@ -43,31 +43,59 @@ module.exports = {
       // Find cart items for this ticket channel
       const cartItems = cart.getByTicket(interaction.channelId, interaction.guildId);
 
-      if (cartItems.length === 0) {
-        return interaction.reply({ content: '❌ No items in cart for this ticket. The buyer needs to select products first.', ephemeral: true });
-      }
-
-      const buyerId = cartItems[0].buyer_id;
-
-      // Create orders from cart
       let totalPrice = 0;
       const orderLines = [];
       const createdOrders = [];
+      let buyerId;
 
-      for (const item of cartItems) {
-        const product = products.getById(item.product_id, interaction.guildId);
-        if (!product) continue;
+      if (cartItems.length > 0) {
+        // Cart still has items — create orders from cart
+        buyerId = cartItems[0].buyer_id;
 
-        const orderId = orders.create(
-          interaction.guildId, buyerId, item.product_id, item.size_label,
-          item.quantity, interaction.channelId, interaction.user.id
-        );
+        for (const item of cartItems) {
+          const product = products.getById(item.product_id, interaction.guildId);
+          if (!product) continue;
 
-        const lineTotal = product.price * item.quantity;
-        totalPrice += lineTotal;
-        const sizeStr = item.size_label ? ` (${item.size_label})` : '';
-        orderLines.push(`• **${product.name}**${sizeStr} x${item.quantity} — ${formatPrice(lineTotal)}`);
-        createdOrders.push(orderId);
+          const orderId = orders.create(
+            interaction.guildId, buyerId, item.product_id, item.size_label,
+            item.quantity, interaction.channelId, interaction.user.id
+          );
+
+          const lineTotal = product.price * item.quantity;
+          totalPrice += lineTotal;
+          const sizeStr = item.size_label ? ` (${item.size_label})` : '';
+          orderLines.push(`• **${product.name}**${sizeStr} x${item.quantity} — ${formatPrice(lineTotal)}`);
+          createdOrders.push(orderId);
+        }
+
+        // Clear cart now that orders are created
+        cart.clearTicket(interaction.channelId, interaction.guildId);
+
+      } else {
+        // Cart already cleared — check for pending orders in this ticket
+        const pendingOrders = db.prepare(
+          `SELECT * FROM orders WHERE ticket_channel_id = ? AND guild_id = ? AND status IN ('pending', 'confirmed', 'awaiting_payment')`
+        ).all(interaction.channelId, interaction.guildId);
+
+        if (pendingOrders.length === 0) {
+          return interaction.reply({ content: '❌ No items in cart for this ticket. The buyer needs to select products first.', ephemeral: true });
+        }
+
+        buyerId = pendingOrders[0].buyer_id;
+
+        for (const o of pendingOrders) {
+          const product = products.getById(o.product_id, interaction.guildId);
+          if (!product) continue;
+          const lineTotal = product.price * o.quantity;
+          totalPrice += lineTotal;
+          const sizeStr = o.size_label ? ` (${o.size_label})` : '';
+          orderLines.push(`• **${product.name}**${sizeStr} x${o.quantity} — ${formatPrice(lineTotal)}`);
+          createdOrders.push(o.id);
+        }
+      }
+
+      if (createdOrders.length === 0) {
+        return interaction.reply({ content: '❌ No valid orders found for this ticket.', ephemeral: true });
       }
 
       // Get payment methods
@@ -102,9 +130,6 @@ module.exports = {
       }
 
       await interaction.reply({ embeds: [embed], components: rows });
-
-      // Clear cart
-      cart.clearTicket(interaction.channelId, interaction.guildId);
     }
 
     // ─── Tracking ───────────────────────────────────────────────────────
