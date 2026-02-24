@@ -1301,40 +1301,75 @@ module.exports = {
             embed.setThumbnail(newThumbnail);
           }
 
-          // Refresh categories on panel
-          const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
-          const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
-          if (catLines.length > 0) {
-            embed.spliceFields(0, embed.data.fields?.length || 0);
-            embed.addFields({ name: 'Categories', value: catLines.join('\n') });
+          // Get buttons from the new button table (with category info)
+          const buttons = db.prepare(`
+            SELECT b.*, c.name as category_name, c.emoji as category_emoji, c.description as category_description, c.ticket_type
+            FROM ticket_panel_buttons b
+            JOIN ticket_categories c ON b.category_id = c.id
+            WHERE b.panel_id = ?
+            ORDER BY b.button_order
+          `).all(panelId);
+
+          // Clear existing fields and add button info
+          embed.spliceFields(0, embed.data.fields?.length || 0);
+
+          // Show button info in embed
+          if (buttons.length > 0) {
+            const buttonList = buttons.map(b => {
+              const label = b.custom_label || b.category_name;
+              const emoji = b.custom_emoji || b.category_emoji || '';
+              return `${emoji} **${label}** — ${b.category_description || 'Open a ticket'}`;
+            }).join('\n');
+            embed.addFields({ name: 'Available Tickets', value: buttonList });
+          } else if (panel.blank) {
+            embed.addFields({ name: 'ℹ️ Note', value: 'This panel has no buttons yet. Use `/ticket button-add` to add buttons.' });
+          } else {
+            embed.addFields({ name: 'ℹ️ Note', value: 'No buttons configured. Use `/ticket button-add` to add buttons.' });
           }
 
-          // Rebuild buttons
-          const buttons = categories.slice(0, 5).map(c =>
-            new ButtonBuilder()
-              .setCustomId(`ticket_open:${c.id}`)
-              .setLabel(c.name)
-              .setEmoji(parseEmoji(c.emoji))
-              .setStyle(ButtonStyle.Primary)
-          );
-
-          const rows = [];
-          for (let i = 0; i < buttons.length; i += 5) {
-            rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-          }
-
-          if (categories.length > 5) {
-            const selectMenu = new StringSelectMenuBuilder()
-              .setCustomId(`ticket_open_select`)
-              .setPlaceholder('Select a ticket category')
-              .addOptions(categories.slice(0, 25).map(c => ({
-                label: c.name,
-                description: (c.description || 'Open a ticket').slice(0, 100),
-                emoji: c.emoji,
-                value: String(c.id),
-              })));
-            rows.length = 0;
-            rows.push(new ActionRowBuilder().addComponents(selectMenu));
+          // Rebuild buttons from the button table
+          let rows = [];
+          if (buttons.length > 0) {
+            if (buttons.length <= 5) {
+              // Create buttons from the button table
+              const buttonComponents = buttons.slice(0, 5).map(b => {
+                const label = b.custom_label || b.category_name;
+                const emoji = b.custom_emoji || b.category_emoji || '';
+                const styleMap = {
+                  'Primary': ButtonStyle.Primary,
+                  'Secondary': ButtonStyle.Secondary,
+                  'Success': ButtonStyle.Success,
+                  'Danger': ButtonStyle.Danger,
+                  'Link': ButtonStyle.Link
+                };
+                return new ButtonBuilder()
+                  .setCustomId(`ticket_open:${b.category_id}`)
+                  .setLabel(label.slice(0, 80))
+                  .setEmoji(parseEmoji(emoji))
+                  .setStyle(styleMap[b.button_style] || ButtonStyle.Primary);
+              });
+              
+              // Group buttons into rows (max 5 per row)
+              for (let i = 0; i < buttonComponents.length; i += 5) {
+                rows.push(new ActionRowBuilder().addComponents(buttonComponents.slice(i, i + 5)));
+              }
+            } else {
+              // Use select menu for more than 5 buttons
+              const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('ticket_open_select')
+                .setPlaceholder('Select a ticket category')
+                .addOptions(buttons.slice(0, 25).map(b => {
+                  const label = b.custom_label || b.category_name;
+                  const emoji = b.custom_emoji || b.category_emoji || '';
+                  return {
+                    label: label.slice(0, 100),
+                    description: (b.category_description || 'Open a ticket').slice(0, 100),
+                    emoji: emoji,
+                    value: String(b.category_id),
+                  };
+                }));
+              rows = [new ActionRowBuilder().addComponents(selectMenu)];
+            }
           }
 
           await message.edit({ embeds: [embed], components: rows });
@@ -1343,19 +1378,81 @@ module.exports = {
           // Message was deleted or not found — resend it
           try {
             const channel = await interaction.client.channels.fetch(panel.channel_id);
-            const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+            
+            // Get buttons from the new button table
+            const buttons = db.prepare(`
+              SELECT b.*, c.name as category_name, c.emoji as category_emoji, c.description as category_description, c.ticket_type
+              FROM ticket_panel_buttons b
+              JOIN ticket_categories c ON b.category_id = c.id
+              WHERE b.panel_id = ?
+              ORDER BY b.button_order
+            `).all(panelId);
+
             const freshEmbed = new EmbedBuilder()
               .setTitle(panel.title || '🎫 Support Tickets')
               .setDescription(panel.description || 'Click a button below to open a ticket.')
               .setColor(parseColor(panel.color) || 0x5865f2)
               .setTimestamp();
-            const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
-            if (catLines.length > 0) freshEmbed.addFields({ name: 'Categories', value: catLines.join('\n') });
-            const freshButtons = categories.slice(0, 5).map(c =>
-              new ButtonBuilder().setCustomId(`ticket_open:${c.id}`).setLabel(c.name).setEmoji(parseEmoji(c.emoji)).setStyle(ButtonStyle.Primary)
-            );
-            const freshRows = [];
-            for (let i = 0; i < freshButtons.length; i += 5) freshRows.push(new ActionRowBuilder().addComponents(freshButtons.slice(i, i + 5)));
+
+            // Show button info in embed
+            if (buttons.length > 0) {
+              const buttonList = buttons.map(b => {
+                const label = b.custom_label || b.category_name;
+                const emoji = b.custom_emoji || b.category_emoji || '';
+                return `${emoji} **${label}** — ${b.category_description || 'Open a ticket'}`;
+              }).join('\n');
+              freshEmbed.addFields({ name: 'Available Tickets', value: buttonList });
+            } else if (panel.blank) {
+              freshEmbed.addFields({ name: 'ℹ️ Note', value: 'This panel has no buttons yet. Use `/ticket button-add` to add buttons.' });
+            } else {
+              freshEmbed.addFields({ name: 'ℹ️ Note', value: 'No buttons configured. Use `/ticket button-add` to add buttons.' });
+            }
+
+            // Rebuild buttons from the button table
+            let freshRows = [];
+            if (buttons.length > 0) {
+              if (buttons.length <= 5) {
+                // Create buttons from the button table
+                const buttonComponents = buttons.slice(0, 5).map(b => {
+                  const label = b.custom_label || b.category_name;
+                  const emoji = b.custom_emoji || b.category_emoji || '';
+                  const styleMap = {
+                    'Primary': ButtonStyle.Primary,
+                    'Secondary': ButtonStyle.Secondary,
+                    'Success': ButtonStyle.Success,
+                    'Danger': ButtonStyle.Danger,
+                    'Link': ButtonStyle.Link
+                  };
+                  return new ButtonBuilder()
+                    .setCustomId(`ticket_open:${b.category_id}`)
+                    .setLabel(label.slice(0, 80))
+                    .setEmoji(parseEmoji(emoji))
+                    .setStyle(styleMap[b.button_style] || ButtonStyle.Primary);
+                });
+                
+                // Group buttons into rows (max 5 per row)
+                for (let i = 0; i < buttonComponents.length; i += 5) {
+                  freshRows.push(new ActionRowBuilder().addComponents(buttonComponents.slice(i, i + 5)));
+                }
+              } else {
+                // Use select menu for more than 5 buttons
+                const selectMenu = new StringSelectMenuBuilder()
+                  .setCustomId('ticket_open_select')
+                  .setPlaceholder('Select a ticket category')
+                  .addOptions(buttons.slice(0, 25).map(b => {
+                    const label = b.custom_label || b.category_name;
+                    const emoji = b.custom_emoji || b.category_emoji || '';
+                    return {
+                      label: label.slice(0, 100),
+                      description: (b.category_description || 'Open a ticket').slice(0, 100),
+                      emoji: emoji,
+                      value: String(b.category_id),
+                    };
+                  }));
+                freshRows = [new ActionRowBuilder().addComponents(selectMenu)];
+              }
+            }
+
             const newMsg = await channel.send({ embeds: [freshEmbed], components: freshRows });
             db.prepare('UPDATE ticket_panels SET message_id = ? WHERE id = ?').run(newMsg.id, panelId);
             await interaction.editReply({ content: '✅ Panel reposted (old message was deleted)!' });
@@ -1466,11 +1563,10 @@ module.exports = {
           } catch (e) {}
         }
 
-        // Refresh all panels
+        // Refresh all panels using new button system
         await interaction.deferReply({ ephemeral: true });
 
         const panels = db.prepare('SELECT * FROM ticket_panels WHERE guild_id = ?').all(interaction.guildId);
-        const allCategories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
 
         for (const panel of panels) {
           if (!panel.message_id || !panel.channel_id) continue;
@@ -1480,38 +1576,74 @@ module.exports = {
             const oldEmbed = message.embeds[0];
             if (!oldEmbed) continue;
 
+            // Get buttons from the new button table (with category info)
+            const buttons = db.prepare(`
+              SELECT b.*, c.name as category_name, c.emoji as category_emoji, c.description as category_description, c.ticket_type
+              FROM ticket_panel_buttons b
+              JOIN ticket_categories c ON b.category_id = c.id
+              WHERE b.panel_id = ?
+              ORDER BY b.button_order
+            `).all(panel.id);
+
             const embed = EmbedBuilder.from(oldEmbed);
-            const catLines = allCategories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
             embed.spliceFields(0, embed.data.fields?.length || 0);
-            if (catLines.length > 0) {
-              embed.addFields({ name: 'Categories', value: catLines.join('\n') });
+
+            // Show button info in embed
+            if (buttons.length > 0) {
+              const buttonList = buttons.map(b => {
+                const label = b.custom_label || b.category_name;
+                const emoji = b.custom_emoji || b.category_emoji || '';
+                return `${emoji} **${label}** — ${b.category_description || 'Open a ticket'}`;
+              }).join('\n');
+              embed.addFields({ name: 'Available Tickets', value: buttonList });
+            } else if (panel.blank) {
+              embed.addFields({ name: 'ℹ️ Note', value: 'This panel has no buttons yet. Use `/ticket button-add` to add buttons.' });
+            } else {
+              embed.addFields({ name: 'ℹ️ Note', value: 'No buttons configured. Use `/ticket button-add` to add buttons.' });
             }
 
-            const buttons = allCategories.slice(0, 5).map(c =>
-              new ButtonBuilder()
-                .setCustomId(`ticket_open:${c.id}`)
-                .setLabel(c.name)
-                .setEmoji(parseEmoji(c.emoji))
-                .setStyle(ButtonStyle.Primary)
-            );
-
-            const rows = [];
-            for (let i = 0; i < buttons.length; i += 5) {
-              rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-            }
-
-            if (allCategories.length > 5) {
-              const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`ticket_open_select`)
-                .setPlaceholder('Select a ticket category')
-                .addOptions(allCategories.slice(0, 25).map(c => ({
-                  label: c.name,
-                  description: (c.description || 'Open a ticket').slice(0, 100),
-                  emoji: c.emoji,
-                  value: String(c.id),
-                })));
-              rows.length = 0;
-              rows.push(new ActionRowBuilder().addComponents(selectMenu));
+            let rows = [];
+            if (buttons.length > 0) {
+              if (buttons.length <= 5) {
+                // Create buttons from the button table
+                const buttonComponents = buttons.slice(0, 5).map(b => {
+                  const label = b.custom_label || b.category_name;
+                  const emoji = b.custom_emoji || b.category_emoji || '';
+                  const styleMap = {
+                    'Primary': ButtonStyle.Primary,
+                    'Secondary': ButtonStyle.Secondary,
+                    'Success': ButtonStyle.Success,
+                    'Danger': ButtonStyle.Danger,
+                    'Link': ButtonStyle.Link
+                  };
+                  return new ButtonBuilder()
+                    .setCustomId(`ticket_open:${b.category_id}`)
+                    .setLabel(label.slice(0, 80))
+                    .setEmoji(parseEmoji(emoji))
+                    .setStyle(styleMap[b.button_style] || ButtonStyle.Primary);
+                });
+                
+                // Group buttons into rows (max 5 per row)
+                for (let i = 0; i < buttonComponents.length; i += 5) {
+                  rows.push(new ActionRowBuilder().addComponents(buttonComponents.slice(i, i + 5)));
+                }
+              } else {
+                // Use select menu for more than 5 buttons
+                const selectMenu = new StringSelectMenuBuilder()
+                  .setCustomId('ticket_open_select')
+                  .setPlaceholder('Select a ticket category')
+                  .addOptions(buttons.slice(0, 25).map(b => {
+                    const label = b.custom_label || b.category_name;
+                    const emoji = b.custom_emoji || b.category_emoji || '';
+                    return {
+                      label: label.slice(0, 100),
+                      description: (b.category_description || 'Open a ticket').slice(0, 100),
+                      emoji: emoji,
+                      value: String(b.category_id),
+                    };
+                  }));
+                rows = [new ActionRowBuilder().addComponents(selectMenu)];
+              }
             }
 
             await message.edit({ embeds: [embed], components: rows });
