@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, AutocompleteInteraction } = require('discord.js');
 const { products, productSizes, settings, vendors } = require('../utils/database');
 const { buildProductEmbed, formatPrice } = require('../utils/helpers');
 
@@ -29,9 +29,28 @@ module.exports = {
             .setRequired(false)
         )
         .addStringOption(opt => opt.setName('name').setDescription('Name for auto-created forum').setRequired(false))
-        .addIntegerOption(opt => opt.setName('product-id').setDescription('Specific product ID').setRequired(false))
+        .addIntegerOption(opt => opt.setName('product-id').setDescription('Specific product ID').setRequired(false).setAutocomplete(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('remove')
+        .setDescription('Remove a product thread from a forum channel')
+        .addIntegerOption(opt => opt.setName('product-id').setDescription('Product to remove').setRequired(true).setAutocomplete(true))
     )
     .setDefaultMemberPermissions(null),
+
+  async autocomplete(interaction) {
+    const guildId = interaction.guildId;
+    const focused = interaction.options.getFocused().toString().toLowerCase();
+    const allProducts = products.getAll(guildId);
+    const filtered = allProducts
+      .filter(p => p.name.toLowerCase().includes(focused) || String(p.id).includes(focused))
+      .slice(0, 25)
+      .map(p => ({
+        name: `${p.name} — ${formatPrice(p.price)} (Stock: ${p.stock}) [ID: ${p.id}]`,
+        value: p.id,
+      }));
+    await interaction.respond(filtered);
+  },
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
@@ -182,6 +201,32 @@ module.exports = {
       if (updated > 0) parts.push(`🔄 Updated **${updated}** product(s)`);
 
       await interaction.editReply({ content: parts.join('\n') });
+    }
+
+    // ─── Remove ───────────────────────────────────────────────────────
+    if (sub === 'remove') {
+      const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.ManageGuild);
+      const vendor = vendors.getByUserId(interaction.user.id, interaction.guildId);
+      if (!vendor && !isAdmin) {
+        return interaction.reply({ content: '❌ You need Manage Server permission or be a trusted vendor.', ephemeral: true });
+      }
+
+      const productId = interaction.options.getInteger('product-id');
+      const product = products.getById(productId, interaction.guildId);
+      if (!product) return interaction.reply({ content: '❌ Product not found.', ephemeral: true });
+
+      // Delete the forum thread if it exists
+      if (product.message_id) {
+        try {
+          const thread = await interaction.client.channels.fetch(product.message_id);
+          if (thread) await thread.delete(`Inventory removed by ${interaction.user.tag}`);
+        } catch (_) {}
+      }
+
+      // Clear the channel/message reference from the product
+      products.updateMessage(productId, interaction.guildId, null, null);
+
+      await interaction.reply({ content: `✅ **${product.name}** removed from inventory channel.`, ephemeral: true });
     }
   },
 };

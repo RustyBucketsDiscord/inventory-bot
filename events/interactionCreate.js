@@ -11,6 +11,15 @@ const pendingRemovals = new Map();
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction) {
+    // ─── Autocomplete ────────────────────────────────────────────────────────
+    if (interaction.isAutocomplete()) {
+      const command = interaction.client.commands.get(interaction.commandName);
+      if (command?.autocomplete) {
+        try { await command.autocomplete(interaction); } catch (_) { await interaction.respond([]); }
+      }
+      return;
+    }
+
     // ─── Slash Commands ─────────────────────────────────────────────────────
     if (interaction.isChatInputCommand()) {
       const command = interaction.client.commands.get(interaction.commandName);
