@@ -1552,13 +1552,12 @@ module.exports = {
         if (newTicketType !== undefined) db.prepare('UPDATE ticket_categories SET ticket_type = ? WHERE id = ?').run(newTicketType, categoryId);
         if (newWelcome !== undefined) db.prepare('UPDATE ticket_categories SET welcome_message = ? WHERE id = ?').run(newWelcome, categoryId);
 
-        // Rename Discord category folder if name changed
+        // Rename Discord category folder if name changed (keep clean name, no emoji or "Tickets" suffix)
         if (newName && category.category_channel_id) {
           try {
             const discordCat = await interaction.guild.channels.fetch(category.category_channel_id);
             if (discordCat) {
-              const emoji = newEmoji || category.emoji;
-              await discordCat.setName(`${emoji} ${newName} Tickets`);
+              await discordCat.setName(newName);
             }
           } catch (e) {}
         }
