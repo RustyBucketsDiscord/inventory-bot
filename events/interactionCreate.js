@@ -1441,6 +1441,7 @@ module.exports = {
         const newName = interaction.fields.getTextInputValue('name')?.trim();
         const newDescription = interaction.fields.getTextInputValue('description')?.trim() || '';
         const newEmoji = interaction.fields.getTextInputValue('emoji')?.trim() || '';
+        const newTicketType = interaction.fields.getTextInputValue('ticket_type')?.trim() || 'support';
         const newWelcome = interaction.fields.getTextInputValue('welcome')?.trim() || '';
 
         const category = db.prepare('SELECT * FROM ticket_categories WHERE id = ? AND guild_id = ?').get(categoryId, interaction.guildId);
@@ -1451,6 +1452,7 @@ module.exports = {
         if (newName) db.prepare('UPDATE ticket_categories SET name = ? WHERE id = ?').run(newName, categoryId);
         if (newDescription !== undefined) db.prepare('UPDATE ticket_categories SET description = ? WHERE id = ?').run(newDescription, categoryId);
         if (newEmoji) db.prepare('UPDATE ticket_categories SET emoji = ? WHERE id = ?').run(newEmoji, categoryId);
+        if (newTicketType !== undefined) db.prepare('UPDATE ticket_categories SET ticket_type = ? WHERE id = ?').run(newTicketType, categoryId);
         if (newWelcome !== undefined) db.prepare('UPDATE ticket_categories SET welcome_message = ? WHERE id = ?').run(newWelcome, categoryId);
 
         // Rename Discord category folder if name changed

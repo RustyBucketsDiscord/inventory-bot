@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { settings } = require('../utils/database');
 const { db } = require('../utils/database');
-const { parseEmoji, parseColor } = require('../utils/helpers');
+const { parseEmoji } = require('../utils/helpers');
 
 // ─── Ticket Settings Table ──────────────────────────────────────────────────
 
@@ -14,7 +14,6 @@ db.exec(`
     title TEXT DEFAULT 'Support Tickets',
     description TEXT DEFAULT 'Click a button below to open a ticket.',
     color TEXT DEFAULT '#5865f2',
-    blank INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -28,22 +27,8 @@ db.exec(`
     category_channel_id TEXT DEFAULT '',
     staff_role_ids TEXT DEFAULT '',
     welcome_message TEXT DEFAULT '',
-    ticket_type TEXT DEFAULT 'support', -- 'purchase' or 'support'
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (panel_id) REFERENCES ticket_panels(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS ticket_panel_buttons (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    panel_id INTEGER NOT NULL,
-    category_id INTEGER NOT NULL,
-    custom_label TEXT DEFAULT '',
-    custom_emoji TEXT DEFAULT '',
-    button_style TEXT DEFAULT 'Primary', -- Primary, Secondary, Success, Danger, Link
-    button_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (panel_id) REFERENCES ticket_panels(id) ON DELETE CASCADE,
-    FOREIGN KEY (category_id) REFERENCES ticket_categories(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS tickets (
@@ -95,55 +80,6 @@ module.exports = {
         .addChannelOption(opt => opt.setName('channel').setDescription('Channel to post the panel in').addChannelTypes(ChannelType.GuildText).setRequired(true))
         .addStringOption(opt => opt.setName('title').setDescription('Panel title').setRequired(false))
         .addStringOption(opt => opt.setName('description').setDescription('Panel description').setRequired(false))
-        .addStringOption(opt => opt.setName('color').setDescription('Panel color (name or hex)').setRequired(false))
-        .addBooleanOption(opt => opt.setName('blank').setDescription('Start with blank panel (no buttons)').setRequired(false))
-    )
-    .addSubcommand(sub =>
-      sub.setName('panel-list')
-        .setDescription('List all ticket panels in this server')
-    )
-    .addSubcommand(sub =>
-      sub.setName('button-add')
-        .setDescription('Add a button to a ticket panel')
-        .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID to add button to').setRequired(true))
-        .addStringOption(opt => opt.setName('category').setDescription('Category name for this button').setRequired(true).setAutocomplete(true))
-        .addStringOption(opt => opt.setName('label').setDescription('Custom button label (optional)').setRequired(false))
-        .addStringOption(opt => opt.setName('emoji').setDescription('Custom emoji (optional)').setRequired(false))
-        .addStringOption(opt => opt.setName('style').setDescription('Button style').setRequired(false)
-          .addChoices(
-            { name: 'Primary (blurple)', value: 'Primary' },
-            { name: 'Secondary (grey)', value: 'Secondary' },
-            { name: 'Success (green)', value: 'Success' },
-            { name: 'Danger (red)', value: 'Danger' },
-            { name: 'Link (grey with link icon)', value: 'Link' }
-          ))
-    )
-    .addSubcommand(sub =>
-      sub.setName('button-remove')
-        .setDescription('Remove a button from a ticket panel')
-        .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID').setRequired(true))
-        .addStringOption(opt => opt.setName('category').setDescription('Category name to remove button for').setRequired(true).setAutocomplete(true))
-    )
-    .addSubcommand(sub =>
-      sub.setName('button-edit')
-        .setDescription('Edit a button on a ticket panel')
-        .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID').setRequired(true))
-        .addStringOption(opt => opt.setName('category').setDescription('Category name to edit button for').setRequired(true).setAutocomplete(true))
-        .addStringOption(opt => opt.setName('label').setDescription('New button label').setRequired(false))
-        .addStringOption(opt => opt.setName('emoji').setDescription('New emoji').setRequired(false))
-        .addStringOption(opt => opt.setName('style').setDescription('New button style').setRequired(false)
-          .addChoices(
-            { name: 'Primary (blurple)', value: 'Primary' },
-            { name: 'Secondary (grey)', value: 'Secondary' },
-            { name: 'Success (green)', value: 'Success' },
-            { name: 'Danger (red)', value: 'Danger' },
-            { name: 'Link (grey with link icon)', value: 'Link' }
-          ))
-    )
-    .addSubcommand(sub =>
-      sub.setName('button-list')
-        .setDescription('List all buttons on a panel')
-        .addIntegerOption(opt => opt.setName('panel-id').setDescription('Panel ID to list buttons for').setRequired(true))
     )
     .addSubcommand(sub =>
       sub.setName('category')
@@ -211,28 +147,6 @@ module.exports = {
         .setDescription('Refresh/resend the ticket panel with current categories')
     )
     .setDefaultMemberPermissions(null), // Allow everyone to use /ticket close etc, permission checks in code
-
-  async autocomplete(interaction) {
-    const focused = interaction.options.getFocused();
-    const sub = interaction.options.getSubcommand();
-    
-    if (sub === 'category-edit' || sub === 'category-remove' || 
-        sub === 'button-add' || sub === 'button-remove' || sub === 'button-edit' ||
-        sub === 'edit-category') {
-      const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY name').all(interaction.guildId);
-      const filtered = categories.filter(c => 
-        c.name.toLowerCase().includes(focused.toLowerCase()) ||
-        (c.description && c.description.toLowerCase().includes(focused.toLowerCase()))
-      ).slice(0, 25);
-      
-      await interaction.respond(
-        filtered.map(c => ({
-          name: `${c.emoji} ${c.name}${c.description ? ` — ${c.description.slice(0, 50)}` : ''}`,
-          value: c.name
-        }))
-      );
-    }
-  },
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
@@ -428,85 +342,67 @@ module.exports = {
       const channelOption = interaction.options.getChannel('channel');
       const title = interaction.options.getString('title') || '🎫 Support Tickets';
       const description = interaction.options.getString('description') || 'Click a button below to open a ticket.';
-      const colorInput = interaction.options.getString('color');
-      const blank = interaction.options.getBoolean('blank') || false;
 
       const channel = await interaction.client.channels.fetch(channelOption.id);
-      const color = parseColor(colorInput) || 0x5865f2;
 
-      // Create panel in DB (include blank flag)
-      const panelStmt = db.prepare('INSERT INTO ticket_panels (guild_id, channel_id, title, description, color, blank) VALUES (?, ?, ?, ?, ?, ?)');
-      const panelResult = panelStmt.run(interaction.guildId, channel.id, title, description, colorInput || '#5865f2', blank ? 1 : 0);
+      const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+
+      if (categories.length === 0) {
+        return interaction.reply({
+          content: '❌ No ticket categories found. Add some first with `/ticket category`',
+          ephemeral: true,
+        });
+      }
+
+      // Create panel in DB
+      const panelStmt = db.prepare('INSERT INTO ticket_panels (guild_id, channel_id, title, description) VALUES (?, ?, ?, ?)');
+      const panelResult = panelStmt.run(interaction.guildId, channel.id, title, description);
       const panelId = panelResult.lastInsertRowid;
+
+      // Link categories to panel
+      const linkStmt = db.prepare('UPDATE ticket_categories SET panel_id = ? WHERE guild_id = ? AND panel_id IS NULL');
+      linkStmt.run(panelId, interaction.guildId);
 
       const embed = new EmbedBuilder()
         .setTitle(title)
         .setDescription(description)
-        .setColor(color)
+        .setColor(0x5865f2)
         .setTimestamp();
 
-      let rows = [];
-      let categories = [];
-      
-      if (!blank) {
-        // Auto-add buttons for all categories (original behavior)
-        categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
-        
-        if (categories.length === 0) {
-          return interaction.reply({
-            content: '❌ No ticket categories found. Add some first with `/ticket category`',
-            ephemeral: true,
-          });
-        }
+      // Add category descriptions
+      const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
+      if (catLines.length > 0) {
+        embed.addFields({ name: 'Categories', value: catLines.join('\n') });
+      }
 
-        // Link categories to panel (for auto-added buttons)
-        const linkStmt = db.prepare('UPDATE ticket_categories SET panel_id = ? WHERE guild_id = ? AND panel_id IS NULL');
-        linkStmt.run(panelId, interaction.guildId);
+      // Create buttons for each category
+      const buttons = categories.slice(0, 5).map(c =>
+        new ButtonBuilder()
+          .setCustomId(`ticket_open:${c.id}`)
+          .setLabel(c.name)
+          .setEmoji(parseEmoji(c.emoji))
+          .setStyle(ButtonStyle.Primary)
+      );
 
-        // Add category descriptions to embed
-        const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
-        if (catLines.length > 0) {
-          embed.addFields({ name: 'Categories', value: catLines.join('\n') });
-        }
+      const rows = [];
+      for (let i = 0; i < buttons.length; i += 5) {
+        rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+      }
 
-        // Create buttons for each category
-        const buttons = categories.slice(0, 5).map(c =>
-          new ButtonBuilder()
-            .setCustomId(`ticket_open:${c.id}`)
-            .setLabel(c.name)
-            .setEmoji(parseEmoji(c.emoji))
-            .setStyle(ButtonStyle.Primary)
-        );
+      // If more than 5 categories, use a select menu instead
+      if (categories.length > 5) {
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId(`ticket_open_select`)
+          .setPlaceholder('Select a ticket category')
+          .addOptions(categories.slice(0, 25).map(c => ({
+            label: c.name,
+            description: (c.description || 'Open a ticket').slice(0, 100),
+            emoji: c.emoji,
+            value: String(c.id),
+          })));
 
-        for (let i = 0; i < buttons.length; i += 5) {
-          rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
-        }
-
-        // If more than 5 categories, use a select menu instead
-        if (categories.length > 5) {
-          const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId(`ticket_open_select`)
-            .setPlaceholder('Select a ticket category')
-            .addOptions(categories.slice(0, 25).map(c => ({
-              label: c.name,
-              description: (c.description || 'Open a ticket').slice(0, 100),
-              emoji: c.emoji,
-              value: String(c.id),
-            })));
-
-          rows = [new ActionRowBuilder().addComponents(selectMenu)];
-        }
-
-        // Create button entries in ticket_panel_buttons table for auto-added buttons
-        for (const cat of categories.slice(0, 25)) {
-          db.prepare(`
-            INSERT INTO ticket_panel_buttons (panel_id, category_id, custom_label, custom_emoji, button_style, button_order)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).run(panelId, cat.id, '', cat.emoji, 'Primary', cat.id);
-        }
-      } else {
-        // Blank panel - no buttons initially
-        embed.addFields({ name: 'ℹ️ Note', value: 'This panel has no buttons yet. Use `/ticket button-add` to add buttons.' });
+        rows.length = 0; // Clear buttons
+        rows.push(new ActionRowBuilder().addComponents(selectMenu));
       }
 
       const msg = await channel.send({ embeds: [embed], components: rows });
@@ -514,9 +410,8 @@ module.exports = {
       // Save message ID
       db.prepare('UPDATE ticket_panels SET message_id = ? WHERE id = ?').run(msg.id, panelId);
 
-      const blankText = blank ? ' (blank - no buttons)' : '';
       await interaction.reply({
-        content: `✅ Ticket panel created in ${channel}! Panel ID: **${panelId}**${blankText}`,
+        content: `✅ Ticket panel created in ${channel}!`,
         ephemeral: true,
       });
     }
@@ -780,15 +675,6 @@ module.exports = {
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
-            .setCustomId('ticket_type')
-            .setLabel('Ticket Type (purchase or support)')
-            .setPlaceholder('purchase')
-            .setValue(category.ticket_type || 'support')
-            .setStyle(TextInputStyle.Short)
-            .setRequired(false)
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
             .setCustomId('welcome')
             .setLabel('Welcome Message (sent when ticket opens)')
             .setPlaceholder('Welcome! How can we help you today?')
@@ -810,14 +696,8 @@ module.exports = {
       const panel = db.prepare('SELECT * FROM ticket_panels WHERE guild_id = ? ORDER BY id DESC LIMIT 1').get(interaction.guildId);
       if (!panel) return interaction.reply({ content: '❌ No panel found. Create one with `/ticket panel` first.', ephemeral: true });
 
-      // Get buttons from the new button table (with category info)
-      const buttons = db.prepare(`
-        SELECT b.*, c.name as category_name, c.emoji as category_emoji, c.description as category_description, c.ticket_type
-        FROM ticket_panel_buttons b
-        JOIN ticket_categories c ON b.category_id = c.id
-        WHERE b.panel_id = ?
-        ORDER BY b.button_order
-      `).all(panel.id);
+      const categories = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
+      if (categories.length === 0) return interaction.reply({ content: '❌ No categories found. Add some with `/ticket category`.', ephemeral: true });
 
       const embed = new EmbedBuilder()
         .setTitle(panel.title || '🎫 Support Tickets')
@@ -825,62 +705,30 @@ module.exports = {
         .setColor(parseColor(panel.color) || 0x5865f2)
         .setTimestamp();
 
-      // Show button info in embed
-      if (buttons.length > 0) {
-        const buttonList = buttons.map(b => {
-          const label = b.custom_label || b.category_name;
-          const emoji = b.custom_emoji || b.category_emoji || '';
-          return `${emoji} **${label}** — ${b.category_description || 'Open a ticket'}`;
-        }).join('\n');
-        embed.addFields({ name: 'Available Tickets', value: buttonList });
-      } else if (panel.blank) {
-        embed.addFields({ name: 'ℹ️ Note', value: 'This panel has no buttons yet. Use `/ticket button-add` to add buttons.' });
-      } else {
-        embed.addFields({ name: 'ℹ️ Note', value: 'No buttons configured. Use `/ticket button-add` to add buttons.' });
-      }
+      const catLines = categories.map(c => `${c.emoji} **${c.name}**${c.description ? ` — ${c.description}` : ''}`);
+      if (catLines.length > 0) embed.addFields({ name: 'Categories', value: catLines.join('\n') });
 
       let rows = [];
-      if (buttons.length > 0) {
-        if (buttons.length <= 5) {
-          // Create buttons from the button table
-          const buttonComponents = buttons.slice(0, 5).map(b => {
-            const label = b.custom_label || b.category_name;
-            const emoji = b.custom_emoji || b.category_emoji || '';
-            const styleMap = {
-              'Primary': ButtonStyle.Primary,
-              'Secondary': ButtonStyle.Secondary,
-              'Success': ButtonStyle.Success,
-              'Danger': ButtonStyle.Danger,
-              'Link': ButtonStyle.Link
-            };
-            return new ButtonBuilder()
-              .setCustomId(`ticket_open:${b.category_id}`)
-              .setLabel(label.slice(0, 80))
-              .setEmoji(parseEmoji(emoji))
-              .setStyle(styleMap[b.button_style] || ButtonStyle.Primary);
-          });
-          
-          // Group buttons into rows (max 5 per row)
-          for (let i = 0; i < buttonComponents.length; i += 5) {
-            rows.push(new ActionRowBuilder().addComponents(buttonComponents.slice(i, i + 5)));
-          }
-        } else {
-          // Use select menu for more than 5 buttons
-          const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('ticket_open_select')
-            .setPlaceholder('Select a ticket category')
-            .addOptions(buttons.slice(0, 25).map(b => {
-              const label = b.custom_label || b.category_name;
-              const emoji = b.custom_emoji || b.category_emoji || '';
-              return {
-                label: label.slice(0, 100),
-                description: (b.category_description || 'Open a ticket').slice(0, 100),
-                emoji: emoji,
-                value: String(b.category_id),
-              };
-            }));
-          rows = [new ActionRowBuilder().addComponents(selectMenu)];
-        }
+      if (categories.length <= 5) {
+        const buttons = categories.slice(0, 5).map(c =>
+          new ButtonBuilder()
+            .setCustomId(`ticket_open:${c.id}`)
+            .setLabel(c.name)
+            .setEmoji(parseEmoji(c.emoji))
+            .setStyle(ButtonStyle.Primary)
+        );
+        rows = [new ActionRowBuilder().addComponents(buttons)];
+      } else {
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('ticket_open_select')
+          .setPlaceholder('Select a ticket category')
+          .addOptions(categories.slice(0, 25).map(c => ({
+            label: c.name,
+            description: (c.description || 'Open a ticket').slice(0, 100),
+            emoji: c.emoji,
+            value: String(c.id),
+          })));
+        rows = [new ActionRowBuilder().addComponents(selectMenu)];
       }
 
       try {
@@ -898,238 +746,6 @@ module.exports = {
       } catch (err) {
         return interaction.reply({ content: `❌ Failed to update panel: ${err.message}`, ephemeral: true });
       }
-    }
-
-    // ─── Panel List ──────────────────────────────────────────────────────
-    if (sub === 'panel-list') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      }
-
-      const panels = db.prepare('SELECT * FROM ticket_panels WHERE guild_id = ? ORDER BY id').all(interaction.guildId);
-      if (panels.length === 0) {
-        return interaction.reply({ content: '❌ No ticket panels found. Create one with `/ticket panel`.', ephemeral: true });
-      }
-
-      const panelList = panels.map(p => {
-        const channelMention = `<#${p.channel_id}>`;
-        const buttonCount = db.prepare('SELECT COUNT(*) as count FROM ticket_panel_buttons WHERE panel_id = ?').get(p.id).count;
-        return `**ID: ${p.id}** — ${p.title}\n   📍 ${channelMention} | 🎫 ${buttonCount} buttons | ${p.blank ? 'Blank' : 'Auto-filled'}`;
-      }).join('\n\n');
-
-      const embed = new EmbedBuilder()
-        .setTitle('📋 Ticket Panels')
-        .setDescription(panelList)
-        .setColor(0x5865f2)
-        .setFooter({ text: 'Use /ticket button-add <panel-id> to add buttons to a panel' });
-
-      await interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    // ─── Button Add ──────────────────────────────────────────────────────
-    if (sub === 'button-add') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      }
-
-      const panelId = interaction.options.getInteger('panel-id');
-      const categoryName = interaction.options.getString('category');
-      const customLabel = interaction.options.getString('label');
-      const customEmoji = interaction.options.getString('emoji') || '';
-      const buttonStyle = interaction.options.getString('style') || 'Primary';
-
-      // Check if panel exists
-      const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ? AND guild_id = ?').get(panelId, interaction.guildId);
-      if (!panel) {
-        return interaction.reply({ content: `❌ Panel ID ${panelId} not found. Use /ticket panel-list to see available panels.`, ephemeral: true });
-      }
-
-      // Find category
-      const category = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? AND LOWER(name) = LOWER(?)').get(interaction.guildId, categoryName);
-      if (!category) {
-        return interaction.reply({ content: `❌ Category "${categoryName}" not found.`, ephemeral: true });
-      }
-
-      // Check if button already exists for this category on this panel
-      const existing = db.prepare('SELECT * FROM ticket_panel_buttons WHERE panel_id = ? AND category_id = ?').get(panelId, category.id);
-      if (existing) {
-        return interaction.reply({ content: `❌ A button for "${categoryName}" already exists on panel ${panelId}. Use /ticket button-edit instead.`, ephemeral: true });
-      }
-
-      // Get next order value
-      const maxOrder = db.prepare('SELECT MAX(button_order) as max FROM ticket_panel_buttons WHERE panel_id = ?').get(panelId).max || 0;
-
-      // Add button to database
-      db.prepare(`
-        INSERT INTO ticket_panel_buttons (panel_id, category_id, custom_label, custom_emoji, button_style, button_order)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(panelId, category.id, customLabel || '', customEmoji, buttonStyle, maxOrder + 1);
-
-      // Update panel to show it's no longer blank
-      if (panel.blank) {
-        db.prepare('UPDATE ticket_panels SET blank = 0 WHERE id = ?').run(panelId);
-      }
-
-      await interaction.reply({ 
-        content: `✅ Button added to panel ${panelId}!\n\n**Category:** ${category.emoji} ${category.name}\n**Label:** ${customLabel || category.name}\n**Emoji:** ${customEmoji || category.emoji || 'None'}\n**Style:** ${buttonStyle}\n\nUse /ticket panel-refresh to update the panel.`, 
-        ephemeral: true 
-      });
-    }
-
-    // ─── Button Remove ───────────────────────────────────────────────────
-    if (sub === 'button-remove') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      }
-
-      const panelId = interaction.options.getInteger('panel-id');
-      const categoryName = interaction.options.getString('category');
-
-      // Check if panel exists
-      const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ? AND guild_id = ?').get(panelId, interaction.guildId);
-      if (!panel) {
-        return interaction.reply({ content: `❌ Panel ID ${panelId} not found.`, ephemeral: true });
-      }
-
-      // Find category
-      const category = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? AND LOWER(name) = LOWER(?)').get(interaction.guildId, categoryName);
-      if (!category) {
-        return interaction.reply({ content: `❌ Category "${categoryName}" not found.`, ephemeral: true });
-      }
-
-      // Remove button
-      const result = db.prepare('DELETE FROM ticket_panel_buttons WHERE panel_id = ? AND category_id = ?').run(panelId, category.id);
-
-      if (result.changes > 0) {
-        await interaction.reply({ 
-          content: `✅ Button for "${categoryName}" removed from panel ${panelId}.\n\nUse /ticket panel-refresh to update the panel.`, 
-          ephemeral: true 
-        });
-      } else {
-        await interaction.reply({ 
-          content: `❌ No button found for "${categoryName}" on panel ${panelId}.`, 
-          ephemeral: true 
-        });
-      }
-    }
-
-    // ─── Button Edit ─────────────────────────────────────────────────────
-    if (sub === 'button-edit') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      }
-
-      const panelId = interaction.options.getInteger('panel-id');
-      const categoryName = interaction.options.getString('category');
-      const newLabel = interaction.options.getString('label');
-      const newEmoji = interaction.options.getString('emoji');
-      const newStyle = interaction.options.getString('style');
-
-      // Check if panel exists
-      const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ? AND guild_id = ?').get(panelId, interaction.guildId);
-      if (!panel) {
-        return interaction.reply({ content: `❌ Panel ID ${panelId} not found.`, ephemeral: true });
-      }
-
-      // Find category
-      const category = db.prepare('SELECT * FROM ticket_categories WHERE guild_id = ? AND LOWER(name) = LOWER(?)').get(interaction.guildId, categoryName);
-      if (!category) {
-        return interaction.reply({ content: `❌ Category "${categoryName}" not found.`, ephemeral: true });
-      }
-
-      // Find existing button
-      const button = db.prepare('SELECT * FROM ticket_panel_buttons WHERE panel_id = ? AND category_id = ?').get(panelId, category.id);
-      if (!button) {
-        return interaction.reply({ content: `❌ No button found for "${categoryName}" on panel ${panelId}. Use /ticket button-add first.`, ephemeral: true });
-      }
-
-      // Update button
-      const updates = [];
-      const params = [];
-      
-      if (newLabel !== null) {
-        updates.push('custom_label = ?');
-        params.push(newLabel || '');
-      }
-      
-      if (newEmoji !== null) {
-        updates.push('custom_emoji = ?');
-        params.push(newEmoji || '');
-      }
-      
-      if (newStyle !== null) {
-        updates.push('button_style = ?');
-        params.push(newStyle);
-      }
-
-      if (updates.length > 0) {
-        params.push(panelId, category.id);
-        const query = `UPDATE ticket_panel_buttons SET ${updates.join(', ')} WHERE panel_id = ? AND category_id = ?`;
-        db.prepare(query).run(...params);
-      }
-
-      const changes = [];
-      if (newLabel !== null) changes.push(`**Label:** ${newLabel || 'Reset to category name'}`);
-      if (newEmoji !== null) changes.push(`**Emoji:** ${newEmoji || 'Reset to category emoji'}`);
-      if (newStyle !== null) changes.push(`**Style:** ${newStyle}`);
-
-      await interaction.reply({ 
-        content: `✅ Button for "${categoryName}" updated on panel ${panelId}.\n\n${changes.join('\n')}\n\nUse /ticket panel-refresh to update the panel.`, 
-        ephemeral: true 
-      });
-    }
-
-    // ─── Button List ─────────────────────────────────────────────────────
-    if (sub === 'button-list') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      }
-
-      const panelId = interaction.options.getInteger('panel-id');
-
-      // Check if panel exists
-      const panel = db.prepare('SELECT * FROM ticket_panels WHERE id = ? AND guild_id = ?').get(panelId, interaction.guildId);
-      if (!panel) {
-        return interaction.reply({ content: `❌ Panel ID ${panelId} not found. Use /ticket panel-list to see available panels.`, ephemeral: true });
-      }
-
-      // Get buttons with category info
-      const buttons = db.prepare(`
-        SELECT b.*, c.name as category_name, c.emoji as category_emoji, c.ticket_type
-        FROM ticket_panel_buttons b
-        JOIN ticket_categories c ON b.category_id = c.id
-        WHERE b.panel_id = ?
-        ORDER BY b.button_order
-      `).all(panelId);
-
-      if (buttons.length === 0) {
-        return interaction.reply({ 
-          content: `❌ No buttons found on panel ${panelId}. This panel is blank.\n\nUse /ticket button-add to add buttons.`, 
-          ephemeral: true 
-        });
-      }
-
-      const buttonList = buttons.map(b => {
-        const label = b.custom_label || b.category_name;
-        const emoji = b.custom_emoji || b.category_emoji || '';
-        const styleEmoji = {
-          'Primary': '🔵',
-          'Secondary': '⚪',
-          'Success': '🟢',
-          'Danger': '🔴',
-          'Link': '🔗'
-        }[b.button_style] || '🔘';
-        
-        return `${styleEmoji} **${label}** ${emoji}\n   📁 ${b.category_name} | 🎫 ${b.ticket_type} | Order: ${b.button_order}`;
-      }).join('\n\n');
-
-      const embed = new EmbedBuilder()
-        .setTitle(`🎫 Buttons on Panel #${panelId}`)
-        .setDescription(buttonList)
-        .setColor(0x5865f2)
-        .setFooter({ text: `Panel: ${panel.title} in #${panel.channel_id}` });
-
-      await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   },
 };
