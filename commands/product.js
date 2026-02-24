@@ -18,13 +18,6 @@ module.exports = {
       sub.setName('remove')
         .setDescription('Remove a product')
     )
-    .addSubcommand(sub =>
-      sub.setName('restock')
-        .setDescription('Restock a product or size')
-        .addIntegerOption(opt => opt.setName('product-id').setDescription('Product ID').setRequired(true))
-        .addIntegerOption(opt => opt.setName('amount').setDescription('Amount to add').setRequired(true))
-        .addStringOption(opt => opt.setName('size').setDescription('Specific size to restock (leave empty for all)').setRequired(false))
-    )
     .setDefaultMemberPermissions(null),
 
   async execute(interaction) {
