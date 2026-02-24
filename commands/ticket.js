@@ -85,7 +85,12 @@ module.exports = {
       sub.setName('category')
         .setDescription('Add a ticket category (auto-creates a Discord folder for it)')
         .addStringOption(opt => opt.setName('name').setDescription('Category name').setRequired(true))
-        .addStringOption(opt => opt.setName('emoji').setDescription('Button emoji').setRequired(false))
+        .addStringOption(opt => opt.setName('type').setDescription('Ticket type').setRequired(false)
+          .addChoices(
+            { name: '🛒 Purchase (shows product dropdown)', value: 'purchase' },
+            { name: '💬 Support (general support)', value: 'support' },
+          ))
+        .addStringOption(opt => opt.setName('emoji').setDescription('Button emoji (unicode only, e.g. 💰)').setRequired(false))
         .addStringOption(opt => opt.setName('description').setDescription('Category description').setRequired(false))
         .addRoleOption(opt => opt.setName('staff-role').setDescription('Override staff role for this category').setRequired(false))
         .addStringOption(opt => opt.setName('welcome-message').setDescription('Message sent when ticket opens').setRequired(false))
@@ -236,7 +241,10 @@ module.exports = {
       await interaction.deferReply({ ephemeral: true });
 
       const name = interaction.options.getString('name');
-      const emoji = interaction.options.getString('emoji') || '🎫';
+      const ticketType = interaction.options.getString('type') || 'support';
+      const rawEmoji = interaction.options.getString('emoji') || '';
+      // Strip custom Discord emojis (<:name:id> or <a:name:id>), keep only unicode
+      const emoji = rawEmoji.replace(/<a?:[^:]+:\d+>/g, '').trim();
       const description = interaction.options.getString('description') || '';
       const staffRole = interaction.options.getRole('staff-role');
       const welcomeMessage = interaction.options.getString('welcome-message') || '';
@@ -276,16 +284,21 @@ module.exports = {
         });
       }
 
+      // Use only the name for the folder (no emoji, no "Tickets" suffix)
+      const folderName = name.slice(0, 100);
       const discordCategory = await interaction.guild.channels.create({
-        name: `${emoji} ${name} Tickets`,
+        name: folderName,
         type: ChannelType.GuildCategory,
         permissionOverwrites: categoryPerms,
         reason: `Ticket category: ${name}`,
       });
 
+      // Add ticket_type column if it doesn't exist
+      try { db.prepare('ALTER TABLE ticket_categories ADD COLUMN ticket_type TEXT DEFAULT "support"').run(); } catch (_) {}
+
       const stmt = db.prepare(`
-        INSERT INTO ticket_categories (guild_id, name, description, emoji, category_channel_id, staff_role_ids, welcome_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ticket_categories (guild_id, name, description, emoji, category_channel_id, staff_role_ids, welcome_message, ticket_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         interaction.guildId,
@@ -294,11 +307,13 @@ module.exports = {
         emoji,
         discordCategory.id,
         staffRoleId,
-        welcomeMessage
+        welcomeMessage,
+        ticketType
       );
 
+      const typeLabel = ticketType === 'purchase' ? '🛒 Purchase (shows product dropdown)' : '💬 Support';
       await interaction.editReply({
-        content: `✅ Category **${emoji} ${name}** added!\n📁 Discord folder: **${discordCategory.name}** (auto-created)\n${description ? `📝 ${description}\n` : ''}${staffRoleId ? `👥 Staff: <@&${staffRoleId}>\n` : ''}\nTickets in this category will be created inside that folder.\nNow create/update a panel with \`/ticket panel\` to show it.`,
+        content: `✅ Category **${emoji ? emoji + ' ' : ''}${name}** added!\n📁 Discord folder: **${folderName}** (auto-created)\n🎫 Type: ${typeLabel}\n${staffRoleId ? `👥 Staff: <@&${staffRoleId}>\n` : ''}\nNow run \`/ticket panel\` to update your panel.`,
       });
     }
 

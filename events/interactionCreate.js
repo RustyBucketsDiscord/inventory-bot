@@ -1773,7 +1773,7 @@ async function handleTicketOpen(interaction, categoryId) {
 
   // If this is a Purchase category, auto-show the product picker for the buyer
   const catNameLower = category.name.toLowerCase();
-  if (catNameLower.includes('purchase') || catNameLower.includes('buy') || catNameLower.includes('order')) {
+  if (category.ticket_type === 'purchase' || catNameLower.includes('purchase') || catNameLower.includes('buy') || catNameLower.includes('order')) {
     const inStockProducts = products.getInStock(interaction.guildId);
 
     if (inStockProducts.length > 0) {
